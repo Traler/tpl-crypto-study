@@ -1,7 +1,18 @@
 import readline from 'readline';
+import crypto from 'crypto';
 import fs from 'fs';
 
 import colors from 'colors';
+
+const algorithm = 'aes-192-cbc';
+const salt = 'qwerty';
+
+const iv = Buffer.from([
+    0x00, 0x01, 0x02, 0x03,
+    0x00, 0x01, 0x02, 0x03, 
+    0x00, 0x01, 0x02, 0x03, 
+    0x00, 0x01, 0x02, 0x03
+]);
 
 colors.setTheme({
     def: ['grey'],
@@ -13,6 +24,11 @@ const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 });
+
+type FileDataType = {
+    fileData: Buffer, 
+    path: string
+};
 
 function askAction() {
     const question = [
@@ -58,14 +74,17 @@ function askAction() {
 }
 
 function askFilePathAndRead() {
-    return new Promise<Buffer>((resolve, reject) => {
+    return new Promise<FileDataType>((resolve, reject) => {
         async function parseFile(rawPath: string) {
-            const path = rawPath.trim();
+            const path = rawPath.trim().replace(/'/g, '');
 
             try {
                 const buffer = fs.readFileSync(path);
-
-                resolve(buffer);
+                console.log(buffer)
+                resolve({
+                    fileData: buffer,
+                    path: path,
+                });
             } catch (err) {
                 console.error(err.message.err);
                 console.log('\nTrying again...');
@@ -79,19 +98,53 @@ function askFilePathAndRead() {
     });
 }
 
-function processFile(action: string, fileData: Buffer) {
+function processFile(action: string, fileData: Buffer, path: string, password: string) {
     function decryptBuffer(buffer: Buffer) {
         // @ts-ignore
         console.log('\nDecrypting enemies secure data...'.def);
 
-        // DECRYPTION LOGIC
+        const key = crypto.scryptSync(password, salt, 24);
+        const decipher = crypto.createDecipheriv(algorithm, key, iv);
+
+        let chunk: Buffer;
+
+        let decrypted = '';
+        decipher.on('readable', () => {
+        while ( null !== ( chunk = decipher.read() ) ) {
+            decrypted += chunk.toString('utf8');
+        }
+        });
+
+        decipher.on('end', () => {
+            fs.writeFileSync(path + '.dec', decrypted);
+        });
+
+        // Encrypted with same algorithm, key and iv.
+        const encrypted = buffer.toString();
+        decipher.write(encrypted, 'hex');
+        decipher.end();
     }
 
     function encryptBuffer(buffer: Buffer) {
         // @ts-ignore
         console.log('\nEncrypting your secrets...'.def);
 
-        // ENCRYPTION LOGIC
+        crypto.scrypt(password, salt, 24, (err, key) => {
+            if (err) throw err;
+        
+            const cipher = crypto.createCipheriv(algorithm, key, iv);
+        
+            let encrypted = '';
+            cipher.setEncoding('hex');
+        
+            cipher.on('data', (chunk) => encrypted += chunk);
+            cipher.on('end', () => {
+                fs.writeFileSync(path + '.enc', encrypted)
+            });
+        
+            cipher.write(buffer);
+            cipher.end();
+        });
     }
 
     switch (action) {
@@ -100,9 +153,21 @@ function processFile(action: string, fileData: Buffer) {
     }
 }
 
+function askPassword() {
+    return new Promise<string>((resolve, reject) => {
+        function readPassword(passwd: string) {
+            resolve(passwd);
+        }
+
+        // @ts-ignore
+        rl.question('\nYour password my King: '.ask, readPassword);
+    });
+}
+
 (async() => {
     const action = await askAction();
-    const fileData = await askFilePathAndRead();
-
-    processFile(action, fileData);
+    const { fileData, path } = await askFilePathAndRead();
+    const password = await askPassword();
+    
+    processFile(action, fileData, path, password);
 })();

@@ -80,7 +80,7 @@ function askFilePathAndRead() {
 
             try {
                 const buffer = fs.readFileSync(path);
-                console.log(buffer)
+
                 resolve({
                     fileData: buffer,
                     path: path,
@@ -99,7 +99,7 @@ function askFilePathAndRead() {
 }
 
 function processFile(action: string, fileData: Buffer, path: string, password: string) {
-    function decryptBuffer(buffer: Buffer) {
+    function decryptBuffer(binData: Buffer) {
         // @ts-ignore
         console.log('\nDecrypting enemies secure data...'.def);
 
@@ -108,24 +108,24 @@ function processFile(action: string, fileData: Buffer, path: string, password: s
 
         let chunk: Buffer;
 
-        let decrypted = '';
+        let buffers: Buffer[] = [];
+
         decipher.on('readable', () => {
         while ( null !== ( chunk = decipher.read() ) ) {
-            decrypted += chunk.toString('utf8');
+            buffers.push(chunk);
         }
         });
 
         decipher.on('end', () => {
-            fs.writeFileSync(path + '.dec', decrypted);
+            fs.writeFileSync(path + '.dec', Buffer.concat(buffers));
         });
 
         // Encrypted with same algorithm, key and iv.
-        const encrypted = buffer.toString();
-        decipher.write(encrypted, 'hex');
+        decipher.write(binData);
         decipher.end();
     }
 
-    function encryptBuffer(buffer: Buffer) {
+    function encryptBuffer(binData: Buffer) {
         // @ts-ignore
         console.log('\nEncrypting your secrets...'.def);
 
@@ -134,15 +134,17 @@ function processFile(action: string, fileData: Buffer, path: string, password: s
         
             const cipher = crypto.createCipheriv(algorithm, key, iv);
         
-            let encrypted = '';
-            cipher.setEncoding('hex');
+            let buffers: Buffer[] = [];
+            //cipher.setEncoding('binary');
         
-            cipher.on('data', (chunk) => encrypted += chunk);
+            cipher.on('data', (chunk) => {
+                buffers.push(chunk);
+            });
             cipher.on('end', () => {
-                fs.writeFileSync(path + '.enc', encrypted)
+                fs.writeFileSync(path + '.enc', Buffer.concat(buffers))
             });
         
-            cipher.write(buffer);
+            cipher.write(binData);
             cipher.end();
         });
     }
